@@ -1,4 +1,39 @@
-;;; gnus-twit.el --- Read Twitter -*- lexical-binding: t -*-
+;;; gnus-twit.el --- Read a Twitter thread in Gnus -*- lexical-binding: t -*-
+;; Copyright (C) 2020 Lars Magne Ingebrigtsen
+
+;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
+;; Keywords: idiocy
+
+;; gnus-twit is free software; you can redistribute it and/or modify it
+;; under the terms of the GNU General Public License as published by
+;; the Free Software Foundation; either version 2, or (at your option)
+;; any later version.
+
+;; gnus-twit is distributed in the hope that it will be useful, but WITHOUT
+;; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+;; or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
+;; License for more details.
+
+;;; Commentary:
+
+;; Usage: M-x gnus-group-twitter RET https://twitter.com/FiveThirtyEight/status/1299178217983619073 RET
+
+;; Then weep.
+
+(defun gnus-group-twitter (url)
+  "Visit an ephemeral Twitter group based on URL."
+  (interactive "sTwitter URL: ")
+  (let ((tmpfile (make-temp-file "gnus-temp-group-")))
+    (unwind-protect
+	;; Add the debbugs address so that we can respond to reports easily.
+        (let ((status (gnus-twit-status url))
+	      (threads (gnus-twit-build url)))
+	  (gnus-twit-make-mbox status threads tmpfile)
+          (gnus-group-read-ephemeral-group
+           (concat "nndoc+ephemeral:twit#" status)
+           `(nndoc ,tmpfile
+                   (nndoc-article-type mbox))))
+      (delete-file tmpfile))))
 
 (defun gnus-twit-fix-url (url)
   (replace-regexp-in-string "https?://.*?/" "https://mobile.twitter.com/" url))
@@ -101,11 +136,11 @@
        (match-string 1 url)))
 
 
-(defun gnus-twit-make-mbox (status threads)
+(defun gnus-twit-make-mbox (status threads file)
   (setq threads (copy-hash-table threads))
   (with-temp-buffer
     (gnus-twit-make-mbox-1 status threads nil)
-    (write-region (point-min) (point-max) "/tmp/twit")))
+    (write-region (point-min) (point-max) file)))
 
 (defun gnus-twit-shorten (string)
   (if (> (length string) 63)
@@ -172,3 +207,7 @@
 						    (match-string 5 string)
 						    #'equal)))))
     string))
+
+(provide 'gnus-twit)
+
+;;; gnus-twit.el ends here
