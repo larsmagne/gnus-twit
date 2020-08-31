@@ -20,6 +20,10 @@
 
 ;; Then weep.
 
+(require 'dom)
+(require 'gnus-group)
+(require 'seq)
+
 (defun gnus-group-twitter (url)
   "Visit an ephemeral Twitter group based on URL."
   (interactive "sTwitter URL: ")
@@ -145,7 +149,7 @@
 
 (defun gnus-twit-shorten (string)
   (if (> (length string) 63)
-      (concat (subseq string 0 60) "...")
+      (concat (substring string 0 60) "...")
     string))
 
 (defun gnus-twit-make-mbox-1 (status threads parent)
