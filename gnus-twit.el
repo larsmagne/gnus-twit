@@ -75,7 +75,8 @@
   (let* ((main (dom-by-class dom "main-tweet"))
 	 (data (list :text `(div nil
 				 ,(dom-by-class main "tweet-text")
-				 ,(dom-by-class main "card-photo"))
+				 ,(dom-by-class main "card-photo")
+				 ,(dom-by-class main "card-summary"))
 		     :date (string-trim
 			    (dom-texts
 			     (dom-by-class (dom-by-class main "tweet-content")
