@@ -161,12 +161,13 @@
                     (replace-regexp-in-string "[@ ]+" ""
                                               (plist-get data :user-name))))
     (insert (format "Subject: %s\n"
-                    (mail-encode-encoded-word-string
-                     (gnus-twit-shorten
-                      (string-trim
-                       (replace-regexp-in-string
-                        "[ \t\n]+" " "
-                        (dom-texts (plist-get data :text))))))))
+                    (let ((rfc2047-encoding-type 'mime))
+                      (rfc2047-encode-string
+                       (gnus-twit-shorten
+                        (string-trim
+                         (replace-regexp-in-string
+                          "[ \t\n]+" " "
+                          (dom-texts (plist-get data :text)))))))))
     (insert (format "Message-ID: <%s@twitter.com>\n" status))
     (when parent
       (insert (format "References: <%s@twitter.com>\n" parent)))
