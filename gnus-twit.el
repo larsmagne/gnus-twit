@@ -178,7 +178,15 @@
     (let ((start (point)))
       (dom-print (plist-get data :text))
       (encode-coding-region start (point) 'utf-8)
-      (quoted-printable-encode-region start (point)))
+      ;; There should not be any multibyte characters in the buffer at this
+      ;; point.  As `encode-coding-region' converts 8-bit bytes to their
+      ;; multibyte representation in multibyte buffers, switch to unibyte mode
+      ;; temporarily, to make `quoted-printable-encode-region' work (?).
+      ;; For example `’' should be encoded as `=E2=80=99', not
+      ;; `=3FFFE2=3FFF80=3FFF99'.
+      (set-buffer-multibyte nil)
+      (quoted-printable-encode-region start (point))
+      (set-buffer-multibyte 'to))
     (insert "\n\n")
     (insert (format "<p><img src=\"%s\">\n"
                     (plist-get data :avatar)))
