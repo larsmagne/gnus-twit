@@ -21,7 +21,6 @@
 ;; Then weep.
 
 ;; TODO: Ignore registry?
-;; TODO: Fix relative links (esp. in profile picture/card img tags)
 
 (require 'dom)
 (require 'gnus-group)
@@ -52,9 +51,21 @@
                    (nndoc-article-type mbox))))
       (delete-file tmpfile))))
 
+(defun gnus-twit-expand-relative (maybe-relative)
+  (when maybe-relative
+    (let ((url (url-generic-parse-url maybe-relative))
+          (base (url-generic-parse-url gnus-twit-nitter-instance)))
+      (if (url-host url)
+          maybe-relative
+        (setf (url-filename base)
+              (concat (string-trim-right (car (url-path-and-query base)) "/+")
+                      "/"
+                      (string-trim-left (url-filename url) "/+")))
+        (url-recreate-url base)))))
+
 (defun gnus-twit-fix-url (url)
   (replace-regexp-in-string "https?://.*?/"
-                            (concat gnus-twit-nitter-instance "/") url))
+                            (gnus-twit-expand-relative "/") url))
 
 (defun gnus-twit-pp (url)
   (setq url (gnus-twit-fix-url url))
@@ -86,7 +97,7 @@
           ;; We have the data for the first tweet in the thread; start
           ;; building.
           (gnus-twit-build-main dom threads)
-        (gnus-twit-build (concat gnus-twit-nitter-instance (car tweets)))))))
+        (gnus-twit-build (gnus-twit-expand-relative (car tweets)))))))
 
 (defun gnus-twit-build-main (dom threads)
   (let* ((main (dom-by-class dom "main-tweet"))
@@ -102,9 +113,11 @@
                      :url (dom-attr
                             (dom-by-tag (dom-by-class main "tweet-date") 'a)
                             'href)
-                     :avatar (dom-attr
-                              (dom-by-tag (dom-by-class main "avatar") 'img)
-                              'src)
+                     :avatar
+                     (gnus-twit-expand-relative
+                      (dom-attr
+                       (dom-by-tag (dom-by-class main "avatar") 'img)
+                       'src))
                      :replies nil))
          (show-mores (dom-by-tag (dom-by-class dom "show-more") 'a))
          (next-page
@@ -136,6 +149,12 @@
                    finally (return (nreverse replies))))
          (status (gnus-twit-status (plist-get data :url)))
          (data (gethash status threads data)))
+    ;; Expand relative URLs.
+    (cl-loop
+     for (tag . attr) in '((a . href) (img . src))
+     do (dolist (elem (dom-by-tag (plist-get data :text) tag))
+          (dom-set-attribute
+           elem attr (gnus-twit-expand-relative (dom-attr elem attr)))))
     (setf (gethash status threads) data)
     (plist-put data :replies (append
                               (when is-continuation
@@ -153,11 +172,11 @@
                 (url-generic-parse-url next-page)))))
        replies))
     (dolist (reply replies)
-      (message "Fetching %s" (concat gnus-twit-nitter-instance reply))
+      (message "Fetching %s" (gnus-twit-expand-relative reply))
       (unless (and (gethash (gnus-twit-status reply) threads)
                    (not (string-equal reply next-page)))
         (with-current-buffer (url-retrieve-synchronously
-                              (concat gnus-twit-nitter-instance reply)
+                              (gnus-twit-expand-relative reply)
                               t)
           (let ((buffer (current-buffer)))
             (goto-char (point-min))
