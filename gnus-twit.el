@@ -20,27 +20,52 @@
 
 ;; Then weep.
 
+;; TODO: Ignore registry?
+
 (require 'dom)
 (require 'gnus-group)
 (require 'seq)
+
+(defgroup gnus-twit nil
+  "Read a Twitter thread in Gnus."
+  :group 'gnus)
+
+(defcustom gnus-twit-nitter-instance "https://nitter.net/"
+  "URL of the Nitter instance to use."
+  :group 'gnus-twit
+  :type '(radio (const :tag "Nitter.net" "https://nitter.net/")
+                (string :tag "URL to a Nitter instance")))
 
 (defun gnus-group-twitter (url)
   "Visit an ephemeral Twitter group based on URL."
   (interactive "sTwitter URL: ")
   (let ((tmpfile (make-temp-file "gnus-temp-group-")))
     (unwind-protect
-	;; Add the debbugs address so that we can respond to reports easily.
+        ;; Add the debbugs address so that we can respond to reports easily.
         (let ((status (gnus-twit-status url))
-	      (threads (gnus-twit-build url)))
-	  (gnus-twit-make-mbox status threads tmpfile)
+              (threads (gnus-twit-build url)))
+          (gnus-twit-make-mbox status threads tmpfile)
           (gnus-group-read-ephemeral-group
            (concat "nndoc+ephemeral:twit#" status)
            `(nndoc ,tmpfile
                    (nndoc-article-type mbox))))
       (delete-file tmpfile))))
 
+(defun gnus-twit-expand-relative (maybe-relative)
+  (when maybe-relative
+    (let ((url (url-generic-parse-url maybe-relative))
+          (base (url-generic-parse-url gnus-twit-nitter-instance)))
+      (if (url-host url)
+          maybe-relative
+        (setf (url-filename base)
+              (concat (string-trim-right (car (url-path-and-query base)) "/+")
+                      "/"
+                      (string-trim-left (url-filename url) "/+")))
+        (url-recreate-url base)))))
+
 (defun gnus-twit-fix-url (url)
-  (replace-regexp-in-string "https?://.*?/" "https://mobile.twitter.com/" url))
+  (replace-regexp-in-string "https?://.*?/"
+                            (gnus-twit-expand-relative "/") url))
 
 (defun gnus-twit-pp (url)
   (setq url (gnus-twit-fix-url url))
@@ -48,11 +73,10 @@
    (with-current-buffer (url-retrieve-synchronously url)
      (goto-char (point-min))
      (prog1
-	 (when (re-search-forward "\r?\n\r?\n" nil t)
-	   (libxml-parse-html-region (point) (point-max)))
+         (when (re-search-forward "\r?\n\r?\n" nil t)
+           (libxml-parse-html-region (point) (point-max)))
        (kill-buffer (current-buffer))))
    t))
-
 
 (defun gnus-twit-build (url)
   (setq url (gnus-twit-fix-url url))
@@ -60,82 +84,117 @@
     (with-current-buffer (url-retrieve-synchronously url)
       (goto-char (point-min))
       (prog1
-	  (when (re-search-forward "\r?\n\r?\n" nil t)
-	    (gnus-twit-check url
-			     (libxml-parse-html-region (point) (point-max))
-			     threads))
-	(kill-buffer (current-buffer))))))
+          (when (re-search-forward "\r?\n\r?\n" nil t)
+            (gnus-twit-check url
+                             (libxml-parse-html-region (point) (point-max))
+                             threads))
+        (kill-buffer (current-buffer))))))
 
 (defun gnus-twit-check (url dom threads)
   (let ((tweets (gnus-twit-tweets dom)))
     (when tweets
       (if (equal (gnus-twit-status url) (gnus-twit-status (car tweets)))
-	  ;; We have the data for the first tweet in the thread; start
-	  ;; building.
-	  (gnus-twit-build-main dom threads)
-	(gnus-twit-build (concat "https://mobile.twitter.com" (car tweets)))))))
+          ;; We have the data for the first tweet in the thread; start
+          ;; building.
+          (gnus-twit-build-main dom threads)
+        (gnus-twit-build (gnus-twit-expand-relative (car tweets)))))))
 
 (defun gnus-twit-build-main (dom threads)
   (let* ((main (dom-by-class dom "main-tweet"))
-	 (data (list :text `(div nil
-				 ,(dom-by-class main "tweet-text")
-				 ,(dom-by-class main "card-photo")
-				 ,(dom-by-class main "card-summary"))
-		     :date (string-trim
-			    (dom-texts
-			     (dom-by-class (dom-by-class main "tweet-content")
-					   "metadata")))
-		     :from (string-trim
-			    (dom-texts (dom-by-class main "fullname")))
-		     :user-name (string-trim
-				 (dom-texts (dom-by-class main "username")))
-		     :url (replace-regexp-in-string
-			   "/actions.*" ""
-			   (dom-attr
-			    (dom-by-tag (dom-by-class main "action-last") 'a)
-			    'href))
-		     :avatar (dom-attr
-			      (dom-by-tag (dom-by-class main "avatar") 'img)
-			      'src)
-		     :replies nil))
-	 (replies
-	  (cl-loop with replies
-		   for tweet in (dom-by-tag (dom-by-class dom "replies") 'table)
-		   when (or (null replies)
-			    (not (equal (dom-text
-					 (dom-by-class main "username"))
-					(plist-get data :user-name))))
-		   do (push (dom-attr tweet 'href) replies)
-		   finally (return (nreverse replies)))))
-    (setf (gethash (gnus-twit-status (plist-get data :url)) threads)
-	  data)
-    (plist-put data :replies (mapcar #'gnus-twit-status replies))
+         (data (list :text `(div nil
+                                 ,(dom-by-class main "tweet-content")
+                                 ,(dom-by-class main "card-container"))
+                     :date (dom-attr
+                            (dom-by-tag (dom-by-class main "tweet-date") 'a)
+                            'title)
+                     :from (dom-attr (dom-by-class main "^fullname$") 'title)
+                     :user-name (dom-attr
+                                 (dom-by-class main "^username$") 'title)
+                     :url (dom-attr
+                            (dom-by-tag (dom-by-class main "tweet-date") 'a)
+                            'href)
+                     :avatar
+                     (gnus-twit-expand-relative
+                      (dom-attr
+                       (dom-by-tag (dom-by-class main "avatar") 'img)
+                       'src))
+                     :replies nil))
+         (show-mores (dom-by-tag (dom-by-class dom "show-more") 'a))
+         (next-page
+          (when (string-match "Load more" (dom-text (last show-mores)))
+            (dom-attr (last show-mores) 'href)))
+         (is-continuation (string-match "Load newest"
+                                        (dom-text (car show-mores))))
+         ;; "After tweets" are replies by the author to
+         ;; split long text into consecutive tweets.
+         ;; TODO: Do these also get truncated/paginated
+         ;; at some point?
+         (after-tweets
+          ;; Ignore after tweets on continuation pages, as they have been
+          ;; processed already.
+          (unless is-continuation
+            (dom-by-class (dom-by-class dom "after-tweet") "tweet-link")))
+         (replies
+          (cl-loop with replies
+                   for tweet in (append
+                                 after-tweets
+                                 ;; "reply" divs also contain timelines, but
+                                 ;; only the first link (reply itself) is
+                                 ;; extracted below.
+                                 (dom-by-class dom (rx "reply" eow)))
+                   do (push (dom-attr
+                             (car (dom-by-class tweet "tweet-link"))
+                             'href)
+                            replies)
+                   finally (return (nreverse replies))))
+         (status (gnus-twit-status (plist-get data :url)))
+         (data (gethash status threads data)))
+    ;; Expand relative URLs.
+    (cl-loop
+     for (tag . attr) in '((a . href) (img . src))
+     do (dolist (elem (dom-by-tag (plist-get data :text) tag))
+          (dom-set-attribute
+           elem attr (gnus-twit-expand-relative (dom-attr elem attr)))))
+    (setf (gethash status threads) data)
+    (plist-put data :replies (append
+                              (when is-continuation
+                                (plist-get data :replies))
+                              (mapcar #'gnus-twit-status replies)))
+    (when next-page
+      (push
+       (setq next-page
+             (concat
+              (car (url-path-and-query
+                    (url-generic-parse-url (plist-get data :url))))
+              "?"
+              (cdr
+               (url-path-and-query
+                (url-generic-parse-url next-page)))))
+       replies))
     (dolist (reply replies)
-      (message "Fetching %s" (concat "https://mobile.twitter.com" reply))
-      (unless (gethash (gnus-twit-status reply) threads)
-	(with-current-buffer (url-retrieve-synchronously
-			      (concat "https://mobile.twitter.com" reply)
-			      t)
-	  (let ((buffer (current-buffer)))
-	    (goto-char (point-min))
-	    (when (re-search-forward "\r?\n\r?\n" nil t)
-	      (gnus-twit-build-main
-	       (libxml-parse-html-region (point) (point-max))
-	       threads))
-	    (kill-buffer buffer)))))
+      (message "Fetching %s" (gnus-twit-expand-relative reply))
+      (unless (and (gethash (gnus-twit-status reply) threads)
+                   (not (string-equal reply next-page)))
+        (with-current-buffer (url-retrieve-synchronously
+                              (gnus-twit-expand-relative reply)
+                              t)
+          (let ((buffer (current-buffer)))
+            (goto-char (point-min))
+            (when (re-search-forward "\r?\n\r?\n" nil t)
+              (gnus-twit-build-main
+               (libxml-parse-html-region (point) (point-max))
+               threads))
+            (kill-buffer buffer)))))
     threads))
 
 (defun gnus-twit-tweets (dom)
-  (cl-loop for tweet in (dom-by-tag dom 'table)
-	   when (string-match "\\`tweet\\|\\`main-tweet"
-			      (or (dom-attr tweet 'class) ""))
-	   collect (replace-regexp-in-string
-		    "\\?.*" ""
-		    (or (dom-attr tweet 'href)
-			(dom-attr (dom-by-tag
-				   (dom-by-class tweet "action-last") 'a)
-				  'href)))))
-    
+  (cl-loop for tweet in (dom-by-class dom "timeline-item")
+           collect (or (dom-attr
+                        (dom-by-tag (dom-by-class tweet "tweet-date") 'a)
+                        'href)
+                       (dom-attr (dom-by-class tweet "tweet-link")
+                                 'href))))
+
 (defun gnus-twit-status (url)
   (and (string-match "/status/\\([0-9]+\\)" url)
        (match-string 1 url)))
@@ -157,60 +216,58 @@
     (remhash status threads)
     (insert (format "From twit@localhost Wed Aug 12 21:34:56 2020\n"))
     (insert (format "From: %s <%s@twitter.com>\n"
-		    (mail-encode-encoded-word-string (plist-get data :from))
-		    (replace-regexp-in-string "[@ ]+" ""
-					      (plist-get data :user-name))))
+                    (mail-encode-encoded-word-string (plist-get data :from))
+                    (replace-regexp-in-string "[@ ]+" ""
+                                              (plist-get data :user-name))))
     (insert (format "Subject: %s\n"
-		    (mail-encode-encoded-word-string
-		     (gnus-twit-shorten
-		      (string-trim
-		       (replace-regexp-in-string
-			"[ \t\n]+" " "
-			(dom-texts (plist-get data :text))))))))
+                    (let ((rfc2047-encoding-type 'mime))
+                      (rfc2047-encode-string
+                       (gnus-twit-shorten
+                        (string-trim
+                         (replace-regexp-in-string
+                          "[ \t\n]+" " "
+                          (dom-texts (plist-get data :text)))))))))
     (insert (format "Message-ID: <%s@twitter.com>\n" status))
     (when parent
       (insert (format "References: <%s@twitter.com>\n" parent)))
     (insert (format "Date: %s\n" (gnus-twit-format-date
-				  (plist-get data :date))))
+                                  (plist-get data :date))))
     (insert "Content-Transfer-Encoding: quoted-printable\n")
     (insert "Content-Type: text/html; charset=utf-8\n\n")
     (let ((start (point)))
       (dom-print (plist-get data :text))
       (encode-coding-region start (point) 'utf-8)
-      (quoted-printable-encode-region start (point)))
+      ;; There should not be any multibyte characters in the buffer at this
+      ;; point.  As `encode-coding-region' converts 8-bit bytes to their
+      ;; multibyte representation in multibyte buffers, switch to unibyte mode
+      ;; temporarily, to make `quoted-printable-encode-region' work (?).
+      ;; For example `’' should be encoded as `=E2=80=99', not
+      ;; `=3FFFE2=3FFF80=3FFF99'.
+      (set-buffer-multibyte nil)
+      (quoted-printable-encode-region start (point))
+      (set-buffer-multibyte 'to))
     (insert "\n\n")
     (insert (format "<p><img src=\"%s\">\n"
-		    (plist-get data :avatar)))
+                    (plist-get data :avatar)))
     (insert (format "<p><a href=\"https://twitter.com%s\">[Link]</a>\n\n"
-		    (plist-get data :url)))
+                    (plist-get data :url)))
     (insert "\n\n\n")
     (dolist (reply (plist-get data :replies))
       (gnus-twit-make-mbox-1 reply threads status))))
 
-(defvar gnus-twit-months
-  '("Jan" "Feb" "Mar" "Apr" "May" "Jun"
-    "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"))
-
 (defun gnus-twit-format-date (string)
-  (if (string-match "\\([0-9]+\\):\\([0-9]+\\) +\\([AP]M\\)[- ]+\\([0-9]+\\) +\\([A-Za-z]+\\) +\\([0-9]+\\)"
-		    string)
+  (if (string-match
+       (rx (group (+ num)) "/" (group (+ num)) "/" (group (+ num)) ", "
+           (group (+ num)) ":" (group (+ num)) ":" (group (+ num)))
+                    string)
       (message-make-date
        (encode-time
-	(make-decoded-time :second 0
-			   :minute (string-to-number (match-string 2 string))
-			   :hour (+ (string-to-number (match-string 1 string))
-				    (if (equal (match-string 3 string) "PM")
-					(if (equal (match-string 1 string) "12")
-					    0
-					  12)
-				      (if (equal (match-string 1 string) "12")
-					  -12
-					12)))
-			   :day (string-to-number (match-string 4 string))
-			   :year (string-to-number (match-string 6 string))
-			   :month (1+ (seq-position gnus-twit-months
-						    (match-string 5 string)
-						    #'equal)))))
+        (make-decoded-time :day (string-to-number (match-string 1 string))
+                           :month (string-to-number (match-string 2 string))
+                           :year (string-to-number (match-string 3 string))
+                           :hour (string-to-number (match-string 4 string))
+                           :minute (string-to-number (match-string 5 string))
+                           :second (string-to-number (match-string 6 string)))))
     string))
 
 (provide 'gnus-twit)
