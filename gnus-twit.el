@@ -142,10 +142,11 @@
                                  ;; only the first link (reply itself) is
                                  ;; extracted below.
                                  (dom-by-class dom (rx "reply" eow)))
-                   do (push (dom-attr
-                             (car (dom-by-class tweet "tweet-link"))
-                             'href)
-                            replies)
+		   for reply = (dom-attr
+				(car (dom-by-class tweet "tweet-link"))
+				'href)
+		   when reply
+                   do (push reply replies)
                    finally (return (nreverse replies))))
          (status (gnus-twit-status (plist-get data :url)))
          (data (gethash status threads data)))
