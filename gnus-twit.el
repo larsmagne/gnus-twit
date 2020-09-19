@@ -246,22 +246,23 @@
     (insert "Content-Type: text/html; charset=utf-8\n\n")
     (let ((start (point)))
       (dom-print (plist-get data :text))
-      (encode-coding-region start (point) 'utf-8)
-      ;; There should not be any multibyte characters in the buffer at this
-      ;; point.  As `encode-coding-region' converts 8-bit bytes to their
-      ;; multibyte representation in multibyte buffers, switch to unibyte mode
-      ;; temporarily, to make `quoted-printable-encode-region' work (?).
-      ;; For example `’' should be encoded as `=E2=80=99', not
-      ;; `=3FFFE2=3FFF80=3FFF99'.
-      (set-buffer-multibyte nil)
-      (set-buffer-multibyte 'to)
       (insert "\n\n")
       (insert (format "<p><img src=\"%s\">\n"
                       (plist-get data :avatar)))
       (insert (format "<p><a href=\"https://twitter.com%s\">[Link]</a>\n\n"
                       (plist-get data :url)))
       (insert "\n\n\n")
-      (quoted-printable-encode-region start (point)))
+      (encode-coding-region start (point) 'utf-8)
+      ;; There should not be any multibyte characters in the buffer at this
+      ;; point.  As `encode-coding-region' converts 8-bit bytes to their
+      ;; multibyte representation in multibyte buffers, switch to unibyte mode
+      ;; temporarily, to make `quoted-printable-encode-region' work (?).
+      ;; For example `’' should be encoded as `=E2=80=99', not
+      ;; `=3FFFE2=3FFF80=3FFF99'.  (This has been fixed in Emacs 28, and
+      ;; is not necessary there.)
+      (set-buffer-multibyte nil)
+      (quoted-printable-encode-region start (point))
+      (set-buffer-multibyte 'to))
     (dolist (reply (plist-get data :replies))
       (gnus-twit-make-mbox-1 reply threads status))))
 
