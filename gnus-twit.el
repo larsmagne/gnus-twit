@@ -36,6 +36,12 @@
   :type '(radio (const :tag "Nitter.net" "https://nitter.net/")
                 (string :tag "URL to a Nitter instance")))
 
+(defcustom gnus-twit-cache nil
+  "If non-nil, cache the results.
+This is mostly for debugging -- if you cache the data, you won't
+see any new responses in a thread."
+  :type 'boolean)
+
 (defun gnus-group-twitter (url)
   "Visit an ephemeral Twitter group based on URL."
   (interactive "sTwitter URL: ")
@@ -45,7 +51,8 @@
         (let* ((status (gnus-twit-status url))
                (threads (gnus-twit-build url))
 	       (group-name (concat "nndoc+ephemeral:twit#" status)))
-	  (push group-name gnus-global-groups)
+	  (when (boundp 'gnus-global-groups)
+	    (push group-name gnus-global-groups))
           (gnus-twit-make-mbox status threads tmpfile)
           (gnus-group-read-ephemeral-group
 	   group-name
@@ -81,11 +88,13 @@
    t))
 
 (defun gnus-twit-retrieve (url)
-  (if (url-is-cached url)
-      (url-fetch-from-cache url)
-    (with-current-buffer (url-retrieve-synchronously url t)
-      (url-store-in-cache (current-buffer))
-      (current-buffer))))
+  (if gnus-twit-cache
+      (if (url-is-cached url)
+	  (url-fetch-from-cache url)
+	(with-current-buffer (url-retrieve-synchronously url t)
+	  (url-store-in-cache (current-buffer))
+	  (current-buffer)))
+    (url-retrieve-synchronously url t)))
 
 (defun gnus-twit-build (url)
   (setq url (gnus-twit-fix-url url))
