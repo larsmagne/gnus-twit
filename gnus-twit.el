@@ -42,11 +42,13 @@
   (let ((tmpfile (make-temp-file "gnus-temp-group-")))
     (unwind-protect
         ;; Add the debbugs address so that we can respond to reports easily.
-        (let ((status (gnus-twit-status url))
-              (threads (gnus-twit-build url)))
+        (let* ((status (gnus-twit-status url))
+               (threads (gnus-twit-build url))
+	       (group-name (concat "nndoc+ephemeral:twit#" status)))
+	  (push group-name gnus-global-groups)
           (gnus-twit-make-mbox status threads tmpfile)
           (gnus-group-read-ephemeral-group
-           (concat "nndoc+ephemeral:twit#" status)
+	   group-name
            `(nndoc ,tmpfile
                    (nndoc-article-type mbox))))
       (delete-file tmpfile))))
@@ -110,7 +112,8 @@
   (let* ((main (dom-by-class dom "main-tweet"))
          (data (list :text `(div nil
                                  ,(dom-by-class main "tweet-content")
-                                 ,(dom-by-class main "card-container"))
+                                 ,(dom-by-class main "card-container")
+                                 ,(dom-by-class main "attachments"))
                      :date (dom-attr
                             (dom-by-tag (dom-by-class main "tweet-date") 'a)
                             'title)
@@ -251,14 +254,14 @@
       ;; For example `’' should be encoded as `=E2=80=99', not
       ;; `=3FFFE2=3FFF80=3FFF99'.
       (set-buffer-multibyte nil)
-      (quoted-printable-encode-region start (point))
-      (set-buffer-multibyte 'to))
-    (insert "\n\n")
-    (insert (format "<p><img src=\"%s\">\n"
-                    (plist-get data :avatar)))
-    (insert (format "<p><a href=\"https://twitter.com%s\">[Link]</a>\n\n"
-                    (plist-get data :url)))
-    (insert "\n\n\n")
+      (set-buffer-multibyte 'to)
+      (insert "\n\n")
+      (insert (format "<p><img src=\"%s\">\n"
+                      (plist-get data :avatar)))
+      (insert (format "<p><a href=\"https://twitter.com%s\">[Link]</a>\n\n"
+                      (plist-get data :url)))
+      (insert "\n\n\n")
+      (quoted-printable-encode-region start (point)))
     (dolist (reply (plist-get data :replies))
       (gnus-twit-make-mbox-1 reply threads status))))
 
