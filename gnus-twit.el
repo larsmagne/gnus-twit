@@ -78,10 +78,17 @@
        (kill-buffer (current-buffer))))
    t))
 
+(defun gnus-twit-retrieve (url)
+  (if (url-is-cached url)
+      (url-fetch-from-cache url)
+    (with-current-buffer (url-retrieve-synchronously url t)
+      (url-store-in-cache (current-buffer))
+      (current-buffer))))
+
 (defun gnus-twit-build (url)
   (setq url (gnus-twit-fix-url url))
   (let ((threads (make-hash-table :test #'equal)))
-    (with-current-buffer (url-retrieve-synchronously url)
+    (with-current-buffer (gnus-twit-retrieve url)
       (goto-char (point-min))
       (prog1
           (when (re-search-forward "\r?\n\r?\n" nil t)
@@ -176,9 +183,8 @@
       (message "Fetching %s" (gnus-twit-expand-relative reply))
       (unless (and (gethash (gnus-twit-status reply) threads)
                    (not (string-equal reply next-page)))
-        (with-current-buffer (url-retrieve-synchronously
-                              (gnus-twit-expand-relative reply)
-                              t)
+        (with-current-buffer (gnus-twit-retrieve
+			      (gnus-twit-expand-relative reply))
           (let ((buffer (current-buffer)))
             (goto-char (point-min))
             (when (re-search-forward "\r?\n\r?\n" nil t)
