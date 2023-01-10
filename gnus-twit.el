@@ -223,7 +223,8 @@ see any new responses in a thread."
   (setq threads (copy-hash-table threads))
   (with-temp-buffer
     (gnus-twit-make-mbox-1 status threads nil)
-    (write-region (point-min) (point-max) file)))
+    (let ((coding-system-for-write 'binary))
+      (write-region (point-min) (point-max) file))))
 
 (defun gnus-twit-shorten (string)
   (if (> (length string) 63)
