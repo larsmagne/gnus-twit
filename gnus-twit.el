@@ -30,7 +30,7 @@
   "Read a Twitter thread in Gnus."
   :group 'gnus)
 
-(defcustom gnus-twit-nitter-instance "https://nitter.net/"
+(defcustom gnus-twit-nitter-instance "https://unofficialbird.com/"
   "URL of the Nitter instance to use."
   :group 'gnus-twit
   :type '(radio (const :tag "Nitter.net" "https://nitter.net/")
